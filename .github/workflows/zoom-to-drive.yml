@@ -3,13 +3,8 @@ name: Zoom Large Recording Test
 on:
   workflow_dispatch:
     inputs:
-      download_url:
-        description: "Zoom download URL"
-        required: true
-        type: string
-
-      download_token:
-        description: "Zoom download token"
+      meeting_id:
+        description: "Zoom meeting ID"
         required: true
         type: string
 
@@ -25,10 +20,52 @@ jobs:
     timeout-minutes: 360
 
     steps:
+      - name: Get Zoom access token
+        id: zoom_token
+        env:
+          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+
+          RESPONSE=$(curl -sS -X POST \
+            "https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${ZOOM_ACCOUNT_ID}" \
+            -u "${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}")
+
+          ACCESS_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access_token=$ACCESS_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Get recording details
+        id: recording
+        env:
+          ACCESS_TOKEN: ${{ steps.zoom_token.outputs.access_token }}
+          MEETING_ID: ${{ inputs.meeting_id }}
+        run: |
+          set -euo pipefail
+
+          RESPONSE=$(curl -sS \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            "https://api.zoom.us/v2/meetings/${MEETING_ID}/recordings")
+
+          DOWNLOAD_URL=$(echo "$RESPONSE" | python3 -c "
+          import sys,json
+          data=json.load(sys.stdin)
+          files=data.get('recording_files', [])
+          mp4=[f for f in files if f.get('file_type') == 'MP4']
+          if not mp4:
+              raise SystemExit('No MP4 recording found')
+          print(mp4[0]['download_url'])
+          ")
+
+          echo "download_url=$DOWNLOAD_URL" >> "$GITHUB_OUTPUT"
+
       - name: Download Zoom recording
         env:
-          DOWNLOAD_URL: ${{ inputs.download_url }}
-          DOWNLOAD_TOKEN: ${{ inputs.download_token }}
+          ACCESS_TOKEN: ${{ steps.zoom_token.outputs.access_token }}
+          DOWNLOAD_URL: ${{ steps.recording.outputs.download_url }}
           FILE_NAME: ${{ inputs.file_name }}
         run: |
           set -euo pipefail
@@ -37,7 +74,7 @@ jobs:
             --fail \
             --retry 5 \
             --retry-delay 10 \
-            -H "Authorization: Bearer ${DOWNLOAD_TOKEN}" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             "${DOWNLOAD_URL}" \
             -o "${FILE_NAME}"
 
