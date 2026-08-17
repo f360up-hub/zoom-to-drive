@@ -50,14 +50,31 @@ jobs:
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             "https://api.zoom.us/v2/meetings/${MEETING_ID}/recordings")
 
+          echo "$RESPONSE" | python3 -m json.tool
+
           DOWNLOAD_URL=$(echo "$RESPONSE" | python3 -c "
           import sys,json
+
           data=json.load(sys.stdin)
           files=data.get('recording_files', [])
-          mp4=[f for f in files if f.get('file_type') == 'MP4']
-          if not mp4:
+
+          video=[]
+
+          for f in files:
+              print(
+                  'TYPE=', f.get('file_type'),
+                  'EXT=', f.get('file_extension'),
+                  'REC_TYPE=', f.get('recording_type'),
+                  file=sys.stderr
+              )
+
+              if str(f.get('file_extension','')).lower() == 'mp4':
+                  video.append(f)
+
+          if not video:
               raise SystemExit('No MP4 recording found')
-          print(mp4[0]['download_url'])
+
+          print(video[0]['download_url'])
           ")
 
           echo "download_url=$DOWNLOAD_URL" >> "$GITHUB_OUTPUT"
