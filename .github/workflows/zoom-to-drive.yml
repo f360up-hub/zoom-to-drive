@@ -1,0 +1,46 @@
+name: Zoom Large Recording Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      download_url:
+        description: "Zoom download URL"
+        required: true
+        type: string
+
+      download_token:
+        description: "Zoom download token"
+        required: true
+        type: string
+
+      file_name:
+        description: "File name"
+        required: true
+        default: "zoom-recording.mp4"
+        type: string
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Download Zoom recording
+        env:
+          DOWNLOAD_URL: ${{ inputs.download_url }}
+          DOWNLOAD_TOKEN: ${{ inputs.download_token }}
+          FILE_NAME: ${{ inputs.file_name }}
+        run: |
+          set -euo pipefail
+
+          curl -L \
+            --fail \
+            --retry 5 \
+            --retry-delay 10 \
+            -H "Authorization: Bearer ${DOWNLOAD_TOKEN}" \
+            "${DOWNLOAD_URL}" \
+            -o "${FILE_NAME}"
+
+          echo "Download completed"
+          ls -lh "${FILE_NAME}"
+          file "${FILE_NAME}"
